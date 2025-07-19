@@ -1,0 +1,67 @@
+---
+# Playbook para configurar Nginx con SSL y autenticación básica en la VM
+# Usa roles de Ansible Galaxy, sin módulos command/shell/script
+- name: Configurar Nginx seguro en VM Ubuntu
+  hosts: all
+  become: true
+  vars:
+    nginx_user: www-data
+    nginx_group: www-data
+    nginx_ssl_cert: /etc/nginx/ssl/server.crt
+    nginx_ssl_key: /etc/nginx/ssl/server.key
+    nginx_auth_basic_file: /etc/nginx/.htpasswd
+    nginx_content_dir: /var/www/html
+    nginx_server_name: _
+    nginx_listen_port: 443
+    nginx_content_index: "<h1>¡Esto es un Ansible editado por Carlos HG!</h1></h1>"
+    nginx_auth_basic_users:
+      - name: usuario
+        password: "{{ 'password' | password_hash('sha512') }}"
+  pre_tasks:
+    - name: Instalar dependencias para certificados y htpasswd
+      apt:
+        name:
+          - openssl
+          - apache2-utils
+        state: present
+        update_cache: yes
+    - name: Crear directorio para certificados
+      file:
+        path: /etc/nginx/ssl
+        state: directory
+        owner: root
+        group: root
+        mode: 0700
+    - name: Generar certificado autofirmado
+      openssl_certificate:
+        path: /etc/nginx/ssl/server.crt
+        privatekey_path: /etc/nginx/ssl/server.key
+        common_name: "localhost"
+        provider: selfsigned
+        state: present
+    - name: Crear archivo htpasswd
+      community.general.htpasswd:
+        path: /etc/nginx/.htpasswd
+        name: "usuario"
+        password: "password"
+        crypt_scheme: md5_crypt
+    - name: Crear contenido web
+      copy:
+        dest: /var/www/html/index.html
+        content: "<h1>¡Esto es un Ansible editado por Carlos HG!</h1>"
+        owner: www-data
+        group: www-data
+        mode: 0644
+  roles:
+    - role: nginxinc.nginx
+  tasks:
+    - name: Configurar Nginx para usar SSL y autenticación básica
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+      notify: Reiniciar Nginx
+  handlers:
+    - name: Reiniciar Nginx
+      service:
+        name: nginx
+        state: restarted
